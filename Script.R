@@ -14,9 +14,12 @@ head(municipios)
 #Lendo dados de distâncias reais entre municípios
 
 
+
+
 distancias <-  read.csv("C:\\temp\\distanciarealmetros.csv",sep = "," ) %>% 
   as_tibble() 
 
+#Como só tem as distãncias em uma mão, preciso inserir as distãncias na mão contrária
 distancias_inv <- distancias %>% 
   rename(CD_yold = CD_y) %>%
   rename(CD_y = CD_x) %>%
@@ -83,7 +86,7 @@ matriz <- municipios_escopo %>%
   full_join(.,., by = c("unidade" = "unidade"), suffix = c("_x", "_y") ) %>% 
   left_join( distancias  ) %>% 
   left_join( distancias_retas ) %>%
-  #distâncias sem 
+  #distância "infinita" onde não há informação
   replace_na( list("Distância" = 10000) ) %>% 
   rename( Distancia  =  "Distância" )
 
@@ -313,6 +316,7 @@ for (i in 1:1) #nrow(parametros) )
       inner_join(trocas, by = c("unitario" = "unitario")) %>% 
       #efetuando a troca
       mutate ( sede = ifelse(ind_municipio.x == ind_municipio.y, sede.y, sede.x ) )
+    #incompleto a partir daqui
 
     
     
