@@ -212,8 +212,10 @@ calcula_lucro_varias_especificacoes <- function(particoes){
   #Recebe um dataframe com as colunas sede e cidades para cada configuração, indexada pela coluna indice
   
   
+
   particoes_matriz <-  particoes %>%
   inner_join(matriz, c("sede" = "CD_x", "cidades" = "CD_y" )) 
+
 
   #agrupando para calcular, para cada candidata, o lucro e carga da região (sem custo da usina), depois o cutso da usina
   especificacoes_limpa_negativas <- particoes_matriz %>% 
@@ -222,24 +224,31 @@ calcula_lucro_varias_especificacoes <- function(particoes){
     mutate ( custo_usina = calcula_custo_usina(energia_GJ = energia_total, num_cenario = i)  ) %>% 
     mutate ( lucro_final_sede = lucro_total_sem_usina - custo_usina) %>% 
     mutate ( lucro_final_sede = ifelse(lucro_final_sede < 0 , 0, lucro_final_sede) )
-  
+
+
   #escolhendo o melhor lucro
   melhor_lucro <- especificacoes_limpa_negativas %>% 
     group_by( indice ) %>% 
     summarise( lucro = sum(lucro_final_sede)  ) %>% 
     top_n( 1, lucro)
   
+
   resposta <- especificacoes_limpa_negativas %>% 
-    filter( indice == melhor_lucro$indice ) %>% 
-    mutate( lucro = melhor_lucro$lucro )
+    filter( indice == first(melhor_lucro$indice) ) %>% 
+    mutate( lucro = first(melhor_lucro$lucro) ) %>% 
+    top_n(1)
   
+
+  particoes <- particoes %>%
+    filter( indice == first(resposta$indice) ) %>%
+    mutate( lucro = first(resposta$lucro) ) %>% 
+    select( sede, cidades, lucro )
   
-  resposta
+  particoes
+  
 
 }
   
-
-
 
 calcula_lucro_escolhendo_sede <- function(particoes) {
   
@@ -247,9 +256,7 @@ calcula_lucro_escolhendo_sede <- function(particoes) {
   
   #Devolve o dataframe com as melhores sedes. E o lucro repetido na coluna lucro
   
-  
-  
-  
+
   #self join para testar todas as cidades como sede
   particoes_com_candidatas <- particoes %>% 
     inner_join( particoes, by = c("sede" = "sede")) %>% 
@@ -308,12 +315,58 @@ calcula_lucro_escolhendo_sede <- function(particoes) {
 
 
 
-#Execução do algoritmo
+realiza_passo_busca_local <- function(particoes) {
+  
 
+  particoes_com_unitario <- particoes %>% 
+    mutate( unitario = 1) %>% 
+    mutate( indice = cumsum(unitario) )
+
+    
+  sedes <- particoes %>% 
+    select(sede) %>% 
+    distinct (sede) %>% 
+    mutate( unitario = 1) %>% 
+    mutate( indice = cumsum(unitario) )
+
+  
+  #montando as trocas
+  #cada municipio troca para cada região
+  ind_municipios <- particoes_com_unitario %>% 
+    select( indice, unitario ) %>% 
+    rename (ind_municipio = indice)
+  
+  ind_sedes <- sedes %>% 
+    select( indice, unitario, sede ) %>% 
+    #adicionando uma sede "zero", que significa levar o município para uma sede dele
+    add_row( indice = 0, unitario = 1  ) %>% 
+    rename (ind_sede = indice)
+
+  trocas <- inner_join( ind_sedes, ind_municipios ) %>% 
+    mutate (ind_troca = cumsum(unitario) )
+
+  particoes_com_unitario <- particoes_com_unitario %>% 
+    rename (ind_municipio = indice) 
+
+  particoes_com_troca <- particoes_com_unitario %>% 
+    inner_join(trocas, by = c("unitario" = "unitario")) %>% 
+    #efetuando a troca de sede
+    mutate ( sede_nova = ifelse(ind_municipio.x == ind_municipio.y, sede.y, sede.x ) ) %>% 
+    #as trocas para sede 0 são trocas para a própria cidade
+    mutate ( sede_nova = ifelse(sede_nova != 0, sede_nova, cidades ) ) %>% 
+    rename (sede = sede_nova, indice = ind_troca) %>%
+    select (sede, cidades, indice)  
+
+  particoes <- calcula_lucro_varias_especificacoes(particoes_com_troca)  
+
+}
+
+
+#Execução do algoritmo
 
 #Loop principal 
 
-heuristicas = c("H1", "H2", "HRand")
+#heuristicas = c("H1", "H2", "HRand")
 
 for (i in 1:1) #nrow(parametros) )
 {
@@ -331,79 +384,30 @@ for (i in 1:1) #nrow(parametros) )
     #escolhendo melhor sede
     particoes <- calcula_lucro_escolhendo_sede(particoes)
     
-    particoes_com_unitario <- particoes %>% 
-      mutate( unitario = 1) %>% 
-      mutate( indice = cumsum(unitario) )
+    continua <- TRUE
+    maior_lucro <- first(particoes$lucro)
     
-    sedes <- particoes %>% 
-      select(sede) %>% 
-      distinct (sede) %>% 
-      mutate( unitario = 1) %>% 
-      mutate( indice = cumsum(unitario) )
+    while (continua){
     
-    
-    #montando as trocas
-    #cada municipio troca para cada região
-    ind_municipios <- particoes_com_unitario %>% 
-      select( indice, unitario ) %>% 
-      rename (ind_municipio = indice)
 
-    ind_sedes <- sedes %>% 
-      select( indice, unitario, sede ) %>% 
-      #adicionando uma sede "zero", que significa levar o município para uma sede dele
-      add_row( indice = 0, unitario = 1  ) %>% 
-      rename (ind_sede = indice)
-    
-    trocas <- inner_join( ind_sedes, ind_municipios ) %>% 
-      mutate (ind_troca = cumsum(unitario) )
-    
-    particoes_com_unitario <- particoes_com_unitario %>% 
-      rename (ind_municipio = indice) 
-
-    particoes_com_troca <- particoes_com_unitario %>% 
-      inner_join(trocas, by = c("unitario" = "unitario")) %>% 
-      #efetuando a troca de sede
-      mutate ( sede_nova = ifelse(ind_municipio.x == ind_municipio.y, sede.y, sede.x ) ) %>% 
-      #as trocas para sede 0 são trocas para a própria cidade
-      mutate ( sede_nova = ifelse(sede_nova != 0, sede_nova, cidades ) ) %>% 
-      rename (sede = sede_nova, indice = ind_troca) %>%
-      select (sede, cidades, indice)  
-    
-    particoes <- calcula_lucro_varias_especificacoes(particoes_com_troca)  
-      
-
-    
-    
-    aaaa <- 0
-
-  
-
-        
-    
-    
-    
-    
+      particoes <- realiza_passo_busca_local( particoes )
+      particoes <- particoes %>% select( sede, cidades)
+      particoes <- calcula_lucro_escolhendo_sede( particoes )
+      lucro_atual <- first( particoes$lucro )    
+      if (lucro_atual > maior_lucro){
+        maior_lucro = lucro_atual
+        print(lucro_atual)
+        continua = TRUE 
+      }
+      else{
+        continua = FALSE
+      }
+    }
   }
+}
     
     
     
     
       
     
-    
-    
-    
-    
-    
-
-    
-    
-    
-    
-    
-    
-  
-}
-
-
-
