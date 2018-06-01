@@ -1,6 +1,8 @@
 
 
 library(tidyverse)
+library(brazilmaps)
+library(tmap)
 
 
 #Lendo municípios e informações de energia e carga
@@ -312,9 +314,6 @@ calcula_lucro_escolhendo_sede <- function(particoes) {
 }
 
 
-
-
-
 realiza_passo_busca_local <- function(particoes) {
   
 
@@ -358,8 +357,53 @@ realiza_passo_busca_local <- function(particoes) {
     select (sede, cidades, indice)  
 
   particoes <- calcula_lucro_varias_especificacoes(particoes_com_troca)  
+  
+  
+  
 
 }
+
+
+gera_mapa_da_particao <- function(particoes){
+  
+  
+  particoes_com_nome <- particoes %>% 
+    left_join( municipios_escopo, by = c("sede" = "CD") ) %>% 
+    select (sede, cidades, Nome) %>% 
+    rename( regiao = Nome ) %>% 
+    mutate (regiao = fct_drop( regiao )) %>% 
+    mutate( nome_sede = regiao )%>% 
+    mutate( nome_sede = as.factor(ifelse(sede == cidades, nome_sede, NA )) )    
+    
+  
+  cidades <- get_brmap(geo = "City")
+  
+  UFs <- get_brmap(geo = "State")
+  
+  cidades <- sp::merge(cidades, particoes_com_nome, by.x = "City", by.y = "cidades"  )
+  
+  sedes_das_particoes <- particoes %>% 
+    group_by(sede) %>% 
+    select(sede) %>% 
+    filter(sede != -1) %>% 
+    distinct(sede)
+  
+  
+  
+  sedes <- sp::merge(cidades, sedes_das_particoes, by.x = "City", by.y = "sede"  )
+  
+  tm_shape(cidades) +
+    tm_fill(col ="regiao" ) +
+    tm_text(text = "nome_sede") +
+    tm_shape(sedes) +
+    tm_borders()
+  
+  
+  
+  
+  
+}
+  
 
 
 #Execução do algoritmo
@@ -402,7 +446,18 @@ for (i in 1:1) #nrow(parametros) )
       else{
         continua = FALSE
       }
+      
+      
+
     }
+    
+    gera_mapa_da_particao( particoes )
+    
+
+    
+    
+    
+    
   }
 }
     
