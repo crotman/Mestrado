@@ -369,11 +369,11 @@ gera_mapa_da_particao <- function(particoes){
   
   particoes_com_nome <- particoes %>% 
     left_join( municipios_escopo, by = c("sede" = "CD") ) %>% 
-    select (sede, cidades, Nome) %>% 
+    select (sede, cidades, Nome, iteracao) %>% 
     rename( regiao = Nome ) %>% 
     mutate (regiao = fct_drop( regiao )) %>% 
-    mutate( nome_sede = regiao )%>% 
-    mutate( nome_sede = as.factor(ifelse(sede == cidades, nome_sede, NA )) )    
+    mutate( nome_sede = regiao ) %>% 
+    mutate( nome_sede = (ifelse(sede == cidades, as.character(nome_sede), NA )) )    
     
   
   cidades <- get_brmap(geo = "City")
@@ -384,7 +384,7 @@ gera_mapa_da_particao <- function(particoes){
   
   sedes_das_particoes <- particoes %>% 
     group_by(sede) %>% 
-    select(sede) %>% 
+    select(sede, iteracao) %>% 
     filter(sede != -1) %>% 
     distinct(sede)
   
@@ -392,12 +392,15 @@ gera_mapa_da_particao <- function(particoes){
   
   sedes <- sp::merge(cidades, sedes_das_particoes, by.x = "City", by.y = "sede"  )
   
-  tm_shape(cidades) +
+  obj_tm_shape <- tm_shape(cidades) +
     tm_fill(col ="regiao" ) +
     tm_text(text = "nome_sede") +
-    tm_shape(sedes) +
-    tm_borders()
-  
+    tm_facets(along = "iteracao")
+    #tm_shape(sedes) +
+    #tm_borders() +
+    #tm_facets(along = "iteracao")
+    
+  animation_tmap(obj_tm_shape, "c:\\temp\\graficoanimado.gif")
   
   
   
@@ -431,9 +434,15 @@ for (i in 1:1) #nrow(parametros) )
     continua <- TRUE
     maior_lucro <- first(particoes$lucro)
     
+    iteracao <- 0
+    
+    particoes_iteracoes <- tibble(iteracao = integer(), sede = integer(), cidades = integer(), lucro = double())
+    
+    
     while (continua){
     
-
+      iteracao <- iteracao + 1
+      
       particoes <- realiza_passo_busca_local( particoes )
       particoes <- particoes %>% select( sede, cidades)
       particoes <- calcula_lucro_escolhendo_sede( particoes )
@@ -447,11 +456,15 @@ for (i in 1:1) #nrow(parametros) )
         continua = FALSE
       }
       
+      particoes <- particoes %>% mutate(iteracao = iteracao)
+      
+      particoes_iteracoes <- particoes_iteracoes %>% union(particoes)
+      
       
 
     }
     
-    gera_mapa_da_particao( particoes )
+    gera_mapa_da_particao( particoes_iteracoes )
     
 
     
