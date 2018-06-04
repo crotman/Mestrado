@@ -364,16 +364,93 @@ realiza_passo_busca_local <- function(particoes) {
 }
 
 
+
 gera_mapa_da_particao <- function(particoes){
   
   
-  particoes_com_nome <- particoes %>% 
+  
+  particoes_com_nome <- particoes %>%
+    mutate( iteracao_perturbacao = perturbacao * 1000 + iteracao  ) %>% 
     left_join( municipios_escopo, by = c("sede" = "CD") ) %>% 
-    select (sede, cidades, Nome, iteracao) %>% 
+    select (sede, cidades, Nome, iteracao, iteracao_perturbacao) %>% 
     rename( regiao = Nome ) %>% 
     mutate (regiao = fct_drop( regiao )) %>% 
     mutate( nome_sede = regiao ) %>% 
-    mutate( nome_sede = (ifelse(sede == cidades, as.character(nome_sede), NA )) )    
+    mutate( nome_sede = (ifelse(sede == cidades, as.character(nome_sede), NA )) ) %>% 
+    mutate(eh_sede = ifelse(sede == cidades, 1, 0) ) %>% 
+    filter (iteracao %% intervalo == 1 | iteracao == n_distinct(.$iteracao)   )
+  
+  
+  cidades <- get_brmap(geo = "City")
+  
+  UFs <- get_brmap(geo = "State")
+  
+  cidades <- sp::merge(cidades, particoes_com_nome, by.x = "City", by.y = "cidades"  )
+  
+  sedes_das_particoes <- particoes %>% 
+    group_by(sede) %>% 
+    select(sede, iteracao) %>% 
+    filter(sede != -1) %>% 
+    distinct(sede)
+  
+  
+  
+  sedes <- sp::merge(cidades, sedes_das_particoes, by.x = "City", by.y = "sede"  )
+  
+  #  obj_tm_shape <- tm_shape(cidades) +
+  #    tm_fill(col ="regiao" ) +
+  #    tm_text(text = "nome_sede") +
+  #    tm_facets(along = "iteracao") +
+  #    tm_shape(sedes) +
+  #    tm_borders() +
+  #    tm_facets(along = "iteracao")
+  
+  
+  obj_tm_shape <- tm_shape(cidades) +
+    tm_fill(col ="regiao" ) +
+    tm_bubbles(size ="eh_sede", size.lim = c(0.1, 1.1), scale = 0.5  ) +     
+    tm_text(text = "nome_sede") +
+    tm_facets(along = "iteracao_perturbacao")
+  
+  
+  
+  
+  
+  animation_tmap(obj_tm_shape, "c:\\temp\\graficoanimado.mpg")
+  
+  
+  
+  
+}
+
+  
+  
+
+gera_video_das_particoes<- function(particoes, intervalo){
+  
+  
+  particoes_grupo <- particoes %>% 
+    group_by(iteracao, perturbacao) %>% 
+    summarise(lucro_group = max(lucro)) %>% 
+    arrange( desc(lucro_group) )
+  
+  ultima_iteracao_das_perturbacoes <- particoes %>% 
+    group_by(perturbacao) %>% 
+    summarise(ultima_iteracao = max(iteracao), lucro_perturbacao = max(lucro) ) %>% 
+    select(perturbacao, ultima_iteracao, lucro_perturbacao )
+    
+  
+  particoes_com_nome <- particoes %>%
+    mutate( iteracao_perturbacao = perturbacao * 1000 + iteracao  ) %>% 
+    left_join( municipios_escopo, by = c("sede" = "CD") ) %>% 
+    select (sede, cidades, Nome, iteracao, iteracao_perturbacao, perturbacao) %>% 
+    rename( regiao = Nome ) %>% 
+    mutate (regiao = fct_drop( regiao )) %>% 
+    mutate( nome_sede = regiao ) %>% 
+    mutate( nome_sede = (ifelse(sede == cidades, as.character(nome_sede), NA )) ) %>% 
+    mutate(eh_sede = ifelse(sede == cidades, 1, 0) ) %>% 
+    left_join( ultima_iteracao_das_perturbacoes  ) %>% 
+    filter (iteracao %% intervalo == 1 | iteracao ==  ultima_iteracao )
     
   
   cidades <- get_brmap(geo = "City")
@@ -392,15 +469,27 @@ gera_mapa_da_particao <- function(particoes){
   
   sedes <- sp::merge(cidades, sedes_das_particoes, by.x = "City", by.y = "sede"  )
   
+#  obj_tm_shape <- tm_shape(cidades) +
+#    tm_fill(col ="regiao" ) +
+#    tm_text(text = "nome_sede") +
+#    tm_facets(along = "iteracao") +
+#    tm_shape(sedes) +
+#    tm_borders() +
+#    tm_facets(along = "iteracao")
+
+  
   obj_tm_shape <- tm_shape(cidades) +
     tm_fill(col ="regiao" ) +
+    tm_bubbles(size ="eh_sede", size.lim = c(0.1, 1.1), scale = 0.5  ) +     
     tm_text(text = "nome_sede") +
-    tm_facets(along = "iteracao")
-    #tm_shape(sedes) +
-    #tm_borders() +
-    #tm_facets(along = "iteracao")
+    tm_facets(along = "iteracao_perturbacao")
+  
     
-  animation_tmap(obj_tm_shape, "c:\\temp\\graficoanimado.gif")
+  print(particoes_grupo)   
+  
+  print(ultima_iteracao_das_perturbacoes)
+
+  animation_tmap(obj_tm_shape, "c:\\temp\\graficoanimado.gif", delay = 200)
   
   
   
@@ -432,44 +521,146 @@ for (i in 1:1) #nrow(parametros) )
     particoes <- calcula_lucro_escolhendo_sede(particoes)
     
     continua <- TRUE
+    maior_lucro_busca_local<- first(particoes$lucro)
     maior_lucro <- first(particoes$lucro)
     
     iteracao <- 0
     
-    particoes_iteracoes <- tibble(iteracao = integer(), sede = integer(), cidades = integer(), lucro = double())
+    particoes_iteracoes <- tibble(iteracao = integer(), perturbacao = integer(), sede = integer(), cidades = integer(), lucro = double())
     
     
-    while (continua){
+    perturbacao <- 0
     
-      iteracao <- iteracao + 1
+    continua_perturbacao <- TRUE
+    
+    while (continua_perturbacao)
+    {
+      continua = TRUE
+    
+      maior_lucro_busca_local <- 0
+      ##busca local
+      while (continua){
+        
       
-      particoes <- realiza_passo_busca_local( particoes )
-      particoes <- particoes %>% select( sede, cidades)
-      particoes <- calcula_lucro_escolhendo_sede( particoes )
-      lucro_atual <- first( particoes$lucro )    
-      if (lucro_atual > maior_lucro){
-        maior_lucro = lucro_atual
-        print(lucro_atual)
-        continua = TRUE 
+        iteracao <- iteracao + 1
+        
+        particoes <- realiza_passo_busca_local( particoes )
+        particoes <- particoes %>% select( sede, cidades)
+        particoes <- calcula_lucro_escolhendo_sede( particoes )
+        lucro_atual <- first( particoes$lucro )    
+        if (lucro_atual > maior_lucro_busca_local){
+          print("lucro atual")
+          print(lucro_atual)
+          print("maior_lucro_busca_local")
+          print(maior_lucro_busca_local)
+          maior_lucro_busca_local = lucro_atual
+          melhor_solucao_busca_local <- particoes
+          continua = TRUE 
+          particoes <- particoes %>% 
+            mutate(iteracao = iteracao) %>% 
+            mutate(perturbacao = perturbacao)
+          
+          particoes_iteracoes <- particoes_iteracoes %>% union(particoes)
+          
+        }
+        else{
+          continua = FALSE
+          if (maior_lucro_busca_local > maior_lucro){
+            maior_lucro <- maior_lucro_busca_local
+            melhor_solucao <- melhor_solucao_busca_local
+          }
+          lucro_atual <- maior_lucro_busca_local
+          
+        }
+        
+        #if (iteracao == 20){
+        #  continua = FALSE
+        #  if (maior_lucro_busca_local > maior_lucro){
+        #    maior_lucro <- maior_lucro_busca_local
+        #    melhor_solucao <- melhor_solucao_busca_local
+        #  }
+        #}
+          
+        
+        
+        
+        
+  
       }
-      else{
-        continua = FALSE
-      }
+    
+      #perturba particao
+      #Cada município tem 1/5 de mudar para uma sede existente 
+      #e 1/20 de mudar para uma sede qualquer 
       
-      particoes <- particoes %>% mutate(iteracao = iteracao)
+      inv_prob_sede_existente = 5
+      
+      inv_prob_sede_qualquer = 20
+
+      sedes_existentes <- particoes %>% 
+        select(sede) %>% 
+        distinct(sede) 
+      
+      n_sedes_existentes <- nrow(sedes_existentes)
+      
+      municipios_existentes <- particoes %>% 
+        select(cidades) %>% 
+        distinct( cidades)
+      
+      n_municipios_existentes = nrow(municipios_existentes)
+        
+      print("perturba")
+      print(perturbacao)
+      print("maior lucro perturbacao")
+      print(maior_lucro_busca_local)
+      print("maior_lucro")
+      print(maior_lucro)
+      
+      particoes_perturbada <- melhor_solucao %>%  
+        mutate (muda_sede_existente = (sample(1:inv_prob_sede_existente,size = n(), replace = TRUE) == 1 )) %>% 
+        mutate (ind_sede_existente_destino = sample(1:n_sedes_existentes,size = n(), replace = TRUE)  ) %>% 
+        mutate (muda_sede_qualquer = (sample(1:inv_prob_sede_qualquer,size = n(), replace = TRUE) == 1 )) %>% 
+        mutate (ind_municipio_existente_destino = sample(1:n_municipios_existentes,size = n(), replace = TRUE)  ) %>% 
+        mutate (sede = ifelse(muda_sede_existente, sedes_existentes$sede[ind_sede_existente_destino], sede )) %>% 
+        mutate (sede = ifelse(muda_sede_qualquer, municipios_existentes$cidades[ind_municipio_existente_destino], sede )) %>% 
+        select(sede, cidades)
+      
+      particoes <- calcula_lucro_escolhendo_sede(particoes = particoes_perturbada )    
+
+      #if (lucro_atual > maior_lucro){
+      #  maior_lucro_busca_local = lucro_atual
+      #  print(lucro_atual)
+      #  continua_perturbacao = TRUE 
+      #}
+      #else{
+      #  continua_perturbacao = TRUE
+      #}
+      
+      
+      if (perturbacao == 10){
+        continua_perturbacao = FALSE
+      }
+    
+      perturbacao <- perturbacao + 1
+      iteracao <- 1
+      
+      particoes <- particoes %>% 
+        mutate(iteracao = iteracao) %>% 
+        mutate(perturbacao = perturbacao)
       
       particoes_iteracoes <- particoes_iteracoes %>% union(particoes)
       
-      
-
     }
     
-    gera_mapa_da_particao( particoes_iteracoes )
+    
+      
+      
+      
+      
+          
+
+    gera_video_das_particoes (particoes_iteracoes, intervalo = 10 )
     
 
-    
-    
-    
     
   }
 }
