@@ -88,7 +88,8 @@ matriz <- municipios_escopo %>%
   left_join( distancias_retas ) %>%
   #distâncias sem 
   replace_na( list("Distância" = 10000) ) %>% 
-  rename( Distancia  =  "Distância" )
+  rename( Distancia  =  "Distância" ) %>% 
+  mutate( Distancia = ifelse (Distancia <0, 10000, Distancia ))
 
 
 
@@ -118,9 +119,9 @@ insere_receita_custo_lucro <- function(num_cenario) {
           (
             custo_colheita * Carga_y +
               custo_armazenamento * Carga_y +
-              custo_carga * Carga_y +
-              custo_transporte * Carga_y * Distancia
+              custo_carga * Carga_y 
           ) * ( 1 + premio_produtor)
+          + custo_transporte * Carga_y * Distancia
         )) %>% 
     
     mutate(  
@@ -338,7 +339,7 @@ realiza_passo_busca_local <- function(particoes) {
   ind_sedes <- sedes %>% 
     select( indice, unitario, sede ) %>% 
     #adicionando uma sede "zero", que significa levar o município para uma sede dele
-    add_row( indice = 0, unitario = 1  ) %>% 
+    add_row( indice = 0, unitario = 1, sede = 0  ) %>% 
     rename (ind_sede = indice)
 
   trocas <- inner_join( ind_sedes, ind_municipios ) %>% 
@@ -504,7 +505,7 @@ gera_video_das_particoes<- function(particoes, intervalo){
 
 #heuristicas = c("H1", "H2", "HRand")
 
-for (i in 1:1) #nrow(parametros) )
+for (i in 2:2 ) #nrow(parametros) )
 {
   
   
@@ -594,7 +595,7 @@ for (i in 1:1) #nrow(parametros) )
       
       inv_prob_sede_existente = 5
       
-      inv_prob_sede_qualquer = 20
+      inv_prob_sede_qualquer = 10
 
       sedes_existentes <- particoes %>% 
         select(sede) %>% 
@@ -636,7 +637,7 @@ for (i in 1:1) #nrow(parametros) )
       #}
       
       
-      if (perturbacao == 10){
+      if (perturbacao == 20){
         continua_perturbacao = FALSE
       }
     
