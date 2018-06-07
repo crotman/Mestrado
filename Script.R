@@ -16,7 +16,6 @@ head(municipios)
 
 #Lendo dados de distâncias reais entre municípios
 
-
 distancias <-  read.csv("C:\\temp\\distanciarealmetros.csv",sep = "," ) %>% 
   as_tibble() 
 
@@ -35,14 +34,10 @@ head(distancias)
 
 #Lendo distâncias em linha reta entre municípios
 
-
 distancias_retas <-  read.csv("C:\\temp\\distancia.csv",sep = "," ) %>% 
   as_tibble() %>% 
   rename(distancia_reta = "Distância") %>% 
   rename(cod1 = cod)
-
-
-
 
 str(distancias_retas)
 
@@ -68,10 +63,8 @@ head(parametros)
 
 #Escolhendo escopo de local da execução
 
-
 municipios_escopo <- municipios %>% 
   filter( X.U.FEFF.UF == "SP" )
-
 
 str(municipios_escopo)
 
@@ -102,7 +95,10 @@ head(matriz)
 #Funções usadas no algoritmo
 
 insere_receita_custo_lucro <- function(num_cenario) {
+
   
+  #inserindo a receita e o custo relacionados à biomassa. Falta o custo da usina
+    
   custo_colheita = as.double( parametros[num_cenario,"custo_colheita_por_t"] )
   custo_armazenamento = as.double( parametros[num_cenario,"custo_armazenamento_por_t"])
   custo_carga = as.double( parametros[num_cenario,"custo_carga_por_t"])
@@ -193,6 +189,91 @@ calcula_heuristica_1 <- function(municipios_escopo) {
   particoes_h  
   
 }
+
+
+
+calcula_heuristica_2 <- function(municipios_escopo, cenario) {
+  
+  #Heurística:
+  #Caminhando pelos municípios em ordem de energia.
+  #Calcular o aumento de lucro que o município daria a cada partição, guardar o maior aumento de lucro e a maior partição
+  #Comparar com o lucro que o município daria com sua própria partição
+  #Escolher se cria uma nova partição ou coloca  municipio na partição onde ele aumentaria mais o lucro
+  #Se todos os lucros forem negativos, coloca numa partição vazia
+  
+  
+  municipios_escopo_h <- municipios_escopo %>% arrange(desc(Energia)) 
+  
+  alfa = as.double( parametros[cenario,"alfa_custo_usina"])
+  
+  #inserindo a partição vazia
+  particoes_h <- tibble(sede = integer(), cidades = integer()  )
+  
+  fim <- FALSE
+  
+  
+  for (m in 1:nrows(municipios_escopo_h)){
+    
+
+    #pegando o município e vendo, para cada partição, qual seria o incremento de lucro
+    #depois pegando o maior lucro adicionado
+    lucros_adicionados_por_particao <- municipios_escopo_h[m] %>% 
+      inner_join(matriz, by = c("CD" = "CD_y")) %>%
+      left_join(particoes_h, )
+      mutate(custo_adic_usina = calcula_custo_usina(energia_GJ = energia, num_cenario = cenario) ) %>% 
+      #retirando o alfa quando a sede é a própria cidade
+      mutate(custo_adic_usina = ifelse(CD_y == CD_x, custo_adic_usina - alfa, custo_adic_usina )) %>% 
+      mutate(lucro_final = lucro - custo_adic_usina) %>% 
+      top_n()
+
+    
+      
+      
+      
+    
+    
+  }
+  
+  
+  cod_municipio_tratar <- as.integer(municipios_escopo_h[1,"CD"])
+  
+  while (!fim)
+  {
+    print(particoes_h)
+    
+    
+    #pegando os vizinhos do município tratado ainda não alocados que dão lucro
+    vizinhos <- matriz %>% 
+      filter(CD_x == cod_municipio_tratar) %>% 
+      inner_join( municipios_escopo_h_desalocados, by = c("CD_y" = "CD")  ) %>% 
+      select (CD_y)
+    
+    
+    if (count(vizinhos) > 0)
+    {
+      #Criando a partição com os vizinhos que dão lucro
+      particoes_h = add_row(particoes_h, sede = cod_municipio_tratar, cidades = vizinhos$CD_y ) 
+      #Retirando os alocados
+      municipios_escopo_h_desalocados <- municipios_escopo_h_desalocados %>% 
+        anti_join( vizinhos, by = c("CD" = "CD_y" ))
+      #Pegando o próximo não alocado 
+      cod_municipio_tratar <- as.integer(municipios_escopo_h_desalocados[1,"CD"])
+    }
+    else
+    {
+      #Se nem o próprio município é viável, alocamos todos os não alocados numa partição vazia
+      resto <- (municipios_escopo_h_desalocados %>% select(CD))$CD
+      particoes_h <- add_row(particoes_h, sede = -1, cidades = resto ) 
+      fim <- TRUE
+    }
+    
+  }
+  
+  particoes_h  
+  
+}
+
+
 
 calcula_custo_usina <- function(energia_GJ, num_cenario){
   
@@ -505,7 +586,7 @@ gera_video_das_particoes<- function(particoes, intervalo){
 
 #heuristicas = c("H1", "H2", "HRand")
 
-for (i in 2:2 ) #nrow(parametros) )
+for (i in 1:1 ) #nrow(parametros) )
 {
   
   
@@ -637,7 +718,7 @@ for (i in 2:2 ) #nrow(parametros) )
       #}
       
       
-      if (perturbacao == 20){
+      if (perturbacao == 10){
         continua_perturbacao = FALSE
       }
     
