@@ -148,11 +148,13 @@ calcula_heuristica_1 <- function(municipios_escopo) {
   
   
   #inserindo a partição vazia
-  particoes_h <- tibble(sede = integer(), cidades = integer()  )
+  particoes_h <- tibble(sede = integer(), cidades = integer(), label = integer()  )
   
   fim <- FALSE
   
   cod_municipio_tratar <- as.integer(municipios_escopo_h[1,"CD"])
+  
+  label <- 1
   
   while (!fim)
   {
@@ -169,7 +171,8 @@ calcula_heuristica_1 <- function(municipios_escopo) {
     if (count(vizinhos) > 0)
     {
       #Criando a partição com os vizinhos que dão lucro
-      particoes_h = add_row(particoes_h, sede = cod_municipio_tratar, cidades = vizinhos$CD_y ) 
+      particoes_h = add_row(particoes_h, sede = cod_municipio_tratar, cidades = vizinhos$CD_y, label = label )
+      label <- label + 1
       #Retirando os alocados
       municipios_escopo_h_desalocados <- municipios_escopo_h_desalocados %>% 
         anti_join( vizinhos, by = c("CD" = "CD_y" ))
@@ -180,7 +183,7 @@ calcula_heuristica_1 <- function(municipios_escopo) {
     {
       #Se nem o próprio município é viável, alocamos todos os não alocados numa partição vazia
       resto <- (municipios_escopo_h_desalocados %>% select(CD))$CD
-      particoes_h <- add_row(particoes_h, sede = -1, cidades = resto ) 
+      particoes_h <- add_row(particoes_h, sede = -1, cidades = resto, label = 0 ) 
       fim <- TRUE
     }
     
@@ -326,7 +329,7 @@ calcula_lucro_varias_especificacoes <- function(particoes){
   particoes <- particoes %>%
     filter( indice == first(resposta$indice) ) %>%
     mutate( lucro = first(resposta$lucro) ) %>% 
-    select( sede, cidades, lucro )
+    select( sede, cidades, lucro, label )
   
   particoes
   
@@ -375,9 +378,10 @@ calcula_lucro_escolhendo_sede <- function(particoes) {
   particoes <- particoes %>% 
     inner_join( candidatas_vencedoras, by = (c("sede" = "sede_original" ))) %>% 
     mutate( sede = ifelse(sede != -1, candidata_vencedora, -1 )) %>% 
-    select( sede, cidades, lucro) %>% 
+    select( sede, cidades, lucro, label) %>% 
     #limpando as partições negativas para a vazia
     mutate( sede = ifelse(lucro < 0, -1, sede) ) %>% 
+    mutate( label = ifelse(lucro < 0, 0, label) ) %>% 
     #o lucro da vazia é zero
     mutate( lucro = ifelse( sede == -1, 0, lucro )  )  %>% 
     arrange( sede )
@@ -398,6 +402,9 @@ calcula_lucro_escolhendo_sede <- function(particoes) {
 
 realiza_passo_busca_local <- function(particoes) {
   
+  
+  max_label <- max(particoes$label)
+  
 
   particoes_com_unitario <- particoes %>% 
     mutate( unitario = 1) %>% 
@@ -405,8 +412,8 @@ realiza_passo_busca_local <- function(particoes) {
 
     
   sedes <- particoes %>% 
-    select(sede) %>% 
-    distinct (sede) %>% 
+    select(sede, label) %>% 
+    distinct (sede, label) %>% 
     mutate( unitario = 1) %>% 
     mutate( indice = cumsum(unitario) )
 
@@ -418,9 +425,9 @@ realiza_passo_busca_local <- function(particoes) {
     rename (ind_municipio = indice)
   
   ind_sedes <- sedes %>% 
-    select( indice, unitario, sede ) %>% 
+    select( indice, unitario, sede, label ) %>% 
     #adicionando uma sede "zero", que significa levar o município para uma sede dele
-    add_row( indice = 0, unitario = 1, sede = 0  ) %>% 
+    add_row( indice = 0, unitario = 1, sede = 0, label = -1  ) %>% 
     rename (ind_sede = indice)
 
   trocas <- inner_join( ind_sedes, ind_municipios ) %>% 
@@ -433,14 +440,15 @@ realiza_passo_busca_local <- function(particoes) {
     inner_join(trocas, by = c("unitario" = "unitario")) %>% 
     #efetuando a troca de sede
     mutate ( sede_nova = ifelse(ind_municipio.x == ind_municipio.y, sede.y, sede.x ) ) %>% 
+    mutate ( label_novo = ifelse(ind_municipio.x == ind_municipio.y, label.y, label.x )   ) %>% 
     #as trocas para sede 0 são trocas para a própria cidade
     mutate ( sede_nova = ifelse(sede_nova != 0, sede_nova, cidades ) ) %>% 
-    rename (sede = sede_nova, indice = ind_troca) %>%
-    select (sede, cidades, indice)  
+    mutate ( label_novo = ifelse(label_novo != -1, label_novo, ifelse(cidades == sede.x, label.x, max_label + 1  )  ) ) %>% 
+    rename (sede = sede_nova, indice = ind_troca, label = label_novo) %>%
+    select (sede, cidades, indice, label)  
 
   particoes <- calcula_lucro_varias_especificacoes(particoes_com_troca)  
-  
-  
+
   
 
 }
@@ -525,14 +533,15 @@ gera_video_das_particoes<- function(particoes, intervalo){
   particoes_com_nome <- particoes %>%
     mutate( iteracao_perturbacao = perturbacao * 1000 + iteracao  ) %>% 
     left_join( municipios_escopo, by = c("sede" = "CD") ) %>% 
-    select (sede, cidades, Nome, iteracao, iteracao_perturbacao, perturbacao) %>% 
+    select (sede, cidades, Nome, iteracao, iteracao_perturbacao, perturbacao, label) %>% 
     rename( regiao = Nome ) %>% 
     mutate (regiao = fct_drop( regiao )) %>% 
     mutate( nome_sede = regiao ) %>% 
     mutate( nome_sede = (ifelse(sede == cidades, as.character(nome_sede), NA )) ) %>% 
     mutate(eh_sede = ifelse(sede == cidades, 1, 0) ) %>% 
     left_join( ultima_iteracao_das_perturbacoes  ) %>% 
-    filter (iteracao %% intervalo == 1 | iteracao ==  ultima_iteracao )
+    filter (iteracao %% intervalo == 1 | iteracao ==  ultima_iteracao ) %>% 
+    mutate (label = as.factor(label))
     
   
   cidades <- get_brmap(geo = "City")
@@ -561,7 +570,7 @@ gera_video_das_particoes<- function(particoes, intervalo){
 
   
   obj_tm_shape <- tm_shape(cidades) +
-    tm_fill(col ="regiao" ) +
+    tm_fill(col ="label" ) +
     tm_bubbles(size ="eh_sede", size.lim = c(0.1, 1.1), scale = 0.5  ) +     
     tm_text(text = "nome_sede") +
     tm_facets(along = "iteracao_perturbacao")
@@ -571,7 +580,7 @@ gera_video_das_particoes<- function(particoes, intervalo){
   
   print(ultima_iteracao_das_perturbacoes)
 
-  animation_tmap(obj_tm_shape, "c:\\temp\\graficoanimado.gif", delay = 200)
+  animation_tmap(obj_tm_shape, "c:\\temp\\graficoanimado.gif", delay = 50)
   
   
   
@@ -608,7 +617,7 @@ for (i in 1:1 ) #nrow(parametros) )
     
     iteracao <- 0
     
-    particoes_iteracoes <- tibble(iteracao = integer(), perturbacao = integer(), sede = integer(), cidades = integer(), lucro = double())
+    particoes_iteracoes <- tibble(iteracao = integer(), perturbacao = integer(), sede = integer(), cidades = integer(), lucro = double(), label = integer())
     
     
     perturbacao <- 0
@@ -627,7 +636,7 @@ for (i in 1:1 ) #nrow(parametros) )
         iteracao <- iteracao + 1
         
         particoes <- realiza_passo_busca_local( particoes )
-        particoes <- particoes %>% select( sede, cidades)
+        particoes <- particoes %>% select( sede, cidades, label)
         particoes <- calcula_lucro_escolhendo_sede( particoes )
         lucro_atual <- first( particoes$lucro )    
         if (lucro_atual > maior_lucro_busca_local){
@@ -655,7 +664,7 @@ for (i in 1:1 ) #nrow(parametros) )
           
         }
         
-        #if (iteracao == 20){
+        #if (iteracao == 40){
         #  continua = FALSE
         #  if (maior_lucro_busca_local > maior_lucro){
         #    maior_lucro <- maior_lucro_busca_local
@@ -671,16 +680,16 @@ for (i in 1:1 ) #nrow(parametros) )
       }
     
       #perturba particao
-      #Cada município tem 1/5 de mudar para uma sede existente 
-      #e 1/20 de mudar para uma sede qualquer 
+      #Cada município tem 1/20 de mudar para uma sede existente 
+      #e 1/300 de mudar para uma sede qualquer 
       
-      inv_prob_sede_existente = 5
+      inv_prob_sede_existente = 20
       
-      inv_prob_sede_qualquer = 10
+      inv_prob_sede_qualquer = 600
 
       sedes_existentes <- particoes %>% 
-        select(sede) %>% 
-        distinct(sede) 
+        select(sede, label) %>% 
+        distinct(sede, label) 
       
       n_sedes_existentes <- nrow(sedes_existentes)
       
@@ -703,8 +712,10 @@ for (i in 1:1 ) #nrow(parametros) )
         mutate (muda_sede_qualquer = (sample(1:inv_prob_sede_qualquer,size = n(), replace = TRUE) == 1 )) %>% 
         mutate (ind_municipio_existente_destino = sample(1:n_municipios_existentes,size = n(), replace = TRUE)  ) %>% 
         mutate (sede = ifelse(muda_sede_existente, sedes_existentes$sede[ind_sede_existente_destino], sede )) %>% 
-        mutate (sede = ifelse(muda_sede_qualquer, municipios_existentes$cidades[ind_municipio_existente_destino], sede )) %>% 
-        select(sede, cidades)
+        mutate (label = ifelse(muda_sede_existente, sedes_existentes$label[ind_sede_existente_destino], label )) %>% 
+        mutate (sede = ifelse(muda_sede_qualquer, cidades, sede )) %>% 
+        mutate (label = ifelse(muda_sede_qualquer, cidades, label )) %>% 
+        select(sede, cidades, label)
       
       particoes <- calcula_lucro_escolhendo_sede(particoes = particoes_perturbada )    
 
