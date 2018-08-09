@@ -1,0 +1,464 @@
+---
+title: "Evolução das iterações do algoritmo ILS usando distância MoJo"
+output:
+  html_notebook: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+
+```{r}
+library(tidyverse)
+library(brazilmaps)
+library(tmap)
+
+
+```
+
+
+Melhor lucro encontrado para cada valor do parâmetro inv_prob_sede_existente. 
+
+A chance de mudança de sede de uma cidade na perturbação da ILS é 1/inv_prob_sede_existente. Ou seja, quanto maior o parâmetro, menos disruptiva é a perturbação.
+
+Nesta avaliação, foram executadas 10 perturbações para cada parâmetro. 
+
+O lucro é expressado em milhões de reais.
+
+```{r}
+
+
+calcula_custo_usina_v2 <- function(energia_GJ, num_cenario, fator_disponibilidade, alfa, beta, perc_opex){
+  
+  #fator_disponibilidade = as.double(parametros[num_cenario,"fator_disponibilidade"])
+  #alfa = as.double( parametros[num_cenario,"alfa_custo_usina"])
+  #beta = as.double( parametros[num_cenario,"beta_custo_usina"])
+  #perc_opex = as.double( parametros[num_cenario,"percentual_OPEX"])
+  
+  #capacidade necessaria a potencia que a usina tem que ter para fazer frente a energia disponibilizada
+  capacidade_necessaria = energia_GJ * MWH_por_GJ / fator_disponibilidade / (24*365)
+  
+  (alfa + beta * capacidade_necessaria) * ( 1 + perc_opex )  / anos_vida_util_usina
+  
+}
+
+
+
+insere_receita_custo_lucro <- function(num_cenario) {
+
+  
+  #inserindo a receita e o custo relacionados aa biomassa. Falta o custo da usina
+    
+  custo_colheita = as.double( parametros[num_cenario,"custo_colheita_por_t"] )
+  custo_armazenamento = as.double( parametros[num_cenario,"custo_armazenamento_por_t"])
+  custo_carga = as.double( parametros[num_cenario,"custo_carga_por_t"])
+  custo_transporte = as.double( parametros[num_cenario,"custo_transporte_por_t_km"])
+  premio_produtor = as.double( parametros[num_cenario,"premio_produtor"])
+  receita_por_mwh = as.double( parametros[num_cenario,"receita_por_mwh"])
+  fator_disponibilidade = as.double(parametros[num_cenario,"fator_disponibilidade"])
+  
+  
+  matriz <- matriz %>% 
+    mutate( 
+      custo = 
+        as.double(
+          (
+            custo_colheita * Carga_y +
+              custo_armazenamento * Carga_y +
+              custo_carga * Carga_y 
+          ) * ( 1 + premio_produtor)
+          + custo_transporte * Carga_y * Distancia
+        )) %>% 
+    
+    mutate(  
+      
+      receita = as.double(Energia_y * MWH_por_GJ * receita_por_mwh * fator_disponibilidade)
+    ) %>% 
+    
+    mutate ( lucro = receita - custo) %>% 
+    
+    filter (lucro >0) %>% 
+    
+    arrange( desc(lucro) ) 
+  
+}
+
+
+
+#Lendo municipios e informacoes de energia e carga
+
+municipios <-  read.csv("D:\\Mestrado Bruno\\HPC Parametrizado\\junta.csv",sep = ";", encoding = "UTF-8",dec = "," ) %>% as_tibble()
+
+
+#Lendo dados de distÃ¢ncias reais entre municipios
+
+distancias <-  read.csv("C:\\temp\\distanciarealmetros.csv",sep = "," ) %>% 
+  as_tibble() 
+
+distancias_inv <- distancias %>% 
+  rename(CD_yold = CD_y) %>%
+  rename(CD_y = CD_x) %>%
+  rename(CD_x = CD_yold)
+
+distancias <- distancias %>% union(distancias_inv)
+
+
+
+#Lendo distancias em linha reta entre municipios
+
+distancias_retas <-  read.csv("C:\\temp\\distancia.csv",sep = "," ) %>% 
+  as_tibble() %>% 
+  rename(distancia_reta = "Distância") %>% 
+  rename(cod1 = cod)
+
+
+
+
+#Lendo parâmetros adicionais
+
+MWH_por_GJ = 0.27777777777777777777777778
+
+anos_vida_util_usina = 30 
+
+parametros <-  read.csv("C:\\temp\\parametros.csv",sep = ";", encoding = "UTF-8",dec = "," ) %>% as_tibble()
+
+
+
+#Escolhendo escopo de local da execucao
+
+municipios_escopo_original <- municipios %>% 
+  filter( X.U.FEFF.UF == "SP" )
+
+
+#Criando uma matriz de distancias
+
+
+matriz <- municipios_escopo_original %>%
+  mutate(unidade = 1) %>% #Para faxer um full outer join
+  full_join(.,., by = c("unidade" = "unidade"), suffix = c("_x", "_y") ) %>% 
+  left_join( distancias  ) %>% 
+  left_join( distancias_retas ) %>%
+  #distÃ¢ncias sem 
+  replace_na( list("Distância" = 10000) ) %>% 
+  rename( Distancia  =  "Distância" ) %>% 
+  mutate( Distancia = ifelse (Distancia <0, 10000, Distancia ))
+
+
+
+matriz_original <- matriz
+
+
+#Inserindo os custos, receitas e lucros para cada par de cidades
+matriz <- insere_receita_custo_lucro(1)
+
+
+matriz_so_lucro_energia <- matriz %>% 
+select(CD_x, CD_y, lucro, Energia_y)
+
+
+#Dados_brutos_1 <- read.csv("c:\\temp\\grande5-10.csv")
+
+#Dados_brutos_2 <- read.csv("c:\\temp\\grande-7-15-20.csv")
+
+
+Dados_brutos_1 <- read.csv("c:\\temp\\retas-5-10-.csv")
+
+Dados_brutos_2 <- read.csv("c:\\temp\\retas-7-15-20-.csv")
+
+
+
+
+
+
+
+Dados_brutos <- union(Dados_brutos_1, Dados_brutos_2)
+
+
+
+Dados_por_iteracao <- Dados_brutos %>% 
+    group_by(iteracao, perturbacao, inv_prob_sede_existente) %>%
+    summarise(MoJo_ate_melhor = mean(MoJo_ate_melhor), lucro = mean(lucro) ) %>% 
+    ungroup() %>% 
+    group_by(inv_prob_sede_existente, perturbacao) %>%
+    mutate(ultima_iteracao = max(iteracao)) %>% 
+    ungroup() %>% 
+    group_by(inv_prob_sede_existente) %>% 
+    mutate(perturbacao_iteracao = 10000 * perturbacao + iteracao  ) %>% 
+    mutate(iteracoes_concatenadas = dense_rank(perturbacao_iteracao)) %>% 
+    ungroup() %>% 
+    arrange(inv_prob_sede_existente, perturbacao, iteracao ) %>% 
+    mutate(MoJo_inicio = ifelse(iteracao == 1, MoJo_ate_melhor, NA ), lucro_inicio = ifelse(iteracao == 1, lucro, NA )) %>% 
+    mutate(MoJo_fim = ifelse(iteracao == ultima_iteracao, MoJo_ate_melhor, NA ), lucro_fim = ifelse(iteracao == ultima_iteracao, lucro, NA ) ) %>% 
+    identity()
+
+    
+    
+Dados_por_perturbacao <- Dados_por_iteracao %>% 
+    group_by(perturbacao, inv_prob_sede_existente) %>% 
+    summarise( lucro = max(lucro) ) %>% 
+    arrange(inv_prob_sede_existente, perturbacao) %>% 
+    group_by(inv_prob_sede_existente) %>% 
+    mutate( maior_lucro_ate_perturbacao = cummax(lucro) ) %>% 
+    mutate( maior_lucro_ate_perturbacao = lag(maior_lucro_ate_perturbacao) ) %>% 
+    select(perturbacao, inv_prob_sede_existente, maior_lucro_ate_perturbacao) %>% 
+    ungroup()
+
+Dados_por_iteracao <- Dados_por_iteracao %>% 
+    left_join(Dados_por_perturbacao) %>% 
+    mutate (label_lucro_fim = ifelse(lucro_fim > maior_lucro_ate_perturbacao, lucro_fim, NA )) %>% 
+    identity()
+        
+
+Lucros <- Dados_por_iteracao %>% 
+    group_by(inv_prob_sede_existente) %>% 
+    summarise(lucro = max(lucro)/1000000)
+
+
+ggplot(Lucros, aes(x = inv_prob_sede_existente, y = lucro)) +
+    geom_point() +
+    geom_text(nudge_y = 10, aes(label = format(lucro, digits = 4 ))) +
+    expand_limits(y = 0) +
+    NULL
+
+
+
+```
+
+
+Comparação das distâncias pela estrada e em linha reta
+
+
+
+```{r}
+
+
+ggplot(matriz) +
+    geom_boxplot(aes(y = Distancia, x="b - Estrada")) +
+    geom_boxplot(aes(y = distancia_reta, x = "a - Linha Reta" ))
+
+
+
+```
+
+
+
+Scatter-Plot
+
+
+```{r}
+
+ggplot(matriz, aes(y = Distancia, x = distancia_reta)) +
+    geom_point( alpha = 0.01) +
+    geom_smooth( )
+
+
+
+```
+
+
+
+
+A figura abaixo mostra uma comparação da evolução das iterações para cada grau de perturbação.
+
+Os pontos verdes mostram pontos de início de cada busca local. O primeiro ponto verde representa a iteração após a solução inicial dada pelo algoritmo guloso. os outros, as soluções iniciais após as perturbações.
+
+A distância MoJo é calculada em relação à melhor solução antes da execução da iteração.
+
+
+```{r}
+
+
+ggplot(Dados_por_iteracao ) +
+    geom_area(aes(x = iteracoes_concatenadas, y = MoJo_ate_melhor )) +
+    geom_point(aes(x = iteracoes_concatenadas, y = MoJo_inicio ), color = "dark green") +
+    geom_point(aes(x = iteracoes_concatenadas, y = MoJo_fim ), color = "red") +
+    facet_grid( inv_prob_sede_existente ~ .)
+
+
+    
+
+```
+
+
+Agora, cada uma das iterações.
+
+E azul, a evolução dos lucros.
+
+
+```{r}
+
+Dados_por_iteracao_5 <- Dados_por_iteracao %>% 
+    filter(inv_prob_sede_existente == 5 ) 
+
+Dados_por_iteracao_7 <- Dados_por_iteracao %>% 
+    filter(inv_prob_sede_existente == 7) 
+
+Dados_por_iteracao_10 <- Dados_por_iteracao %>% 
+    filter(inv_prob_sede_existente == 10) 
+
+Dados_por_iteracao_15 <- Dados_por_iteracao %>% 
+    filter(inv_prob_sede_existente == 15) 
+
+Dados_por_iteracao_20 <- Dados_por_iteracao %>% 
+    filter(inv_prob_sede_existente == 20) 
+
+
+Plota <- function(dados)
+{
+    
+    ggplot(dados ) +
+        geom_area(aes(x = iteracoes_concatenadas, y = MoJo_ate_melhor ), alpha = 0.5) +
+        geom_line(aes(x = iteracoes_concatenadas, y = lucro/1000000 ), color = "blue") +
+        geom_point(aes(x = iteracoes_concatenadas, y = lucro_inicio/1000000 ), color = "blue") +
+        geom_point(aes(x = iteracoes_concatenadas, y = lucro_fim/1000000 ), color = "blue") +
+        #geom_text(nudge_y = -10, color = "blue", size=1, aes( x = iteracoes_concatenadas, y = lucro_inicio/1000000, label = format(lucro_inicio/1000000, digits = 4 ))) +
+        geom_text(nudge_y = 10, color = "blue", size=3, aes( x = iteracoes_concatenadas, y = label_lucro_fim/1000000, label = format(label_lucro_fim/1000000, digits = 4  ))) +
+        geom_point(aes(x = iteracoes_concatenadas, y = MoJo_inicio ), color = "dark green") +
+        geom_point(aes(x = iteracoes_concatenadas, y = MoJo_fim ), color = "red") +
+        geom_text(nudge_y = 10, aes(x = iteracoes_concatenadas, y = MoJo_inicio,  label = MoJo_inicio ), color = "dark green") +
+        geom_text(nudge_y = -10, aes(x = iteracoes_concatenadas, y = MoJo_fim,  label = MoJo_fim ), color = "dark red") +
+        scale_y_continuous("Lucro/Mojo",sec.axis = dup_axis() ) +
+        theme(axis.text.y.right = element_text(color = "blue")) +
+        NULL
+    
+    
+}
+
+
+Plota(Dados_por_iteracao_5)
+
+Plota(Dados_por_iteracao_7)
+
+Plota(Dados_por_iteracao_10)
+
+Plota(Dados_por_iteracao_15)
+
+Plota(Dados_por_iteracao_20)
+
+
+
+```
+
+
+Solução antes da primeira perturbação. Ou seja, da primeira busca local após a solução do algoritmo guloso.
+
+
+```{r}
+
+
+
+limpa_particoes <- function(particoes){
+  #Jogando as cidades sem lucro para a região para a partição vazia
+  particoes <- particoes %>% 
+    left_join(matriz_so_lucro_energia, c("sede" = "CD_x", "cidades" = "CD_y" ))
+
+
+  #particoes <- particoes %>% 
+  #  mutate(sede = if_else(is.na(lucro), as.integer(-1), sede ), label = if_else(is.na(lucro), as.integer(0), label ) ) %>% 
+  #  select(sede, cidades, label, iteracao) %>% 
+  #  identity()
+
+  particoes
+  
+}
+
+
+
+
+gera_mapa_da_particao <- function(particao_avaliar_1, particao_avaliar_2, marca_especiais ){
+
+    
+
+  
+  particoes_com_nome <- limpa_particoes(particao_avaliar_1) %>%
+    left_join( municipios_escopo, by = c("sede" = "CD") ) %>% 
+    select (sede, cidades, Nome) %>% 
+    rename( regiao = Nome ) %>% 
+    mutate( regiao = if_else(cidades == 3541208 & marca_especiais, "P. BERNARDES", as.character(regiao) )   )  %>% 
+    mutate( regiao = if_else(cidades == 3553906 & marca_especiais, "TARABAI", as.character(regiao) )   )  %>% 
+    mutate (regiao = fct_drop( regiao )) %>% 
+    mutate( nome_sede = regiao ) %>% 
+    mutate( nome_sede = (ifelse(sede == cidades, as.character(nome_sede), NA )) ) %>% 
+    mutate(eh_sede = ifelse(sede == cidades, 1, 0) ) %>% 
+    mutate(transp_borda = 0.4 )  
+
+  
+  cidades <- get_brmap(geo = "City")
+  
+  UFs <- get_brmap(geo = "State")
+  
+  cidades <- sp::merge(cidades, particoes_com_nome, by.x = "City", by.y = "cidades"  )
+  
+  cidade_perdida <- cidades %>%  filter(City == 3515301)
+  
+  
+  sedes_das_particoes <- particao_avaliar_1 %>% 
+    group_by(sede) %>% 
+    select(sede, iteracao) %>% 
+    filter(sede != -1) %>% 
+    distinct(sede)
+  
+  
+  
+  sedes <- sp::merge(cidades, sedes_das_particoes, by.x = "City", by.y = "sede"  )
+  
+
+  
+    tm_shape(cidades) +
+        tm_borders(alpha = 0.2) +
+        tm_fill(col ="regiao" ) +
+        tm_bubbles(size ="eh_sede", size.lim = c(0.1, 1.1), scale = 0.5  ) +     
+        tm_text(text = "nome_sede") +
+    #tm_shape(cidade_perdida) +
+    #    tm_borders(cidade_perdida) +
+        NULL
+
+
+}
+
+
+
+
+municipios <-  read.csv("D:\\Mestrado Bruno\\HPC Parametrizado\\junta.csv",sep = ";", encoding = "UTF-8",dec = "," ) %>% as_tibble()
+
+municipios_escopo <- municipios %>% 
+  filter( X.U.FEFF.UF == "SP" )
+
+
+
+
+
+particao_avaliar <- Dados_brutos %>% 
+    filter(iteracao == 16 & perturbacao == 0, inv_prob_sede_existente == 5 ) %>% 
+    #filter(iteracao == 55 & perturbacao == 10, inv_prob_sede_existente == 10 ) %>% 
+    select(sede, cidades, label, iteracao)
+
+
+gera_mapa_da_particao(particao_avaliar, particao_avaliar, marca_especiais = FALSE)
+
+
+
+
+
+```
+
+
+Melhor solução.
+
+
+```{r}
+
+particao_avaliar <- Dados_brutos %>% 
+    filter(iteracao == 93 & perturbacao == 50, inv_prob_sede_existente == 5 ) %>% 
+    #filter(iteracao == 55 & perturbacao == 10, inv_prob_sede_existente == 10 ) %>% 
+    select(sede, cidades, label, iteracao)
+
+
+gera_mapa_da_particao(particao_avaliar, particao_avaliar, marca_especiais = FALSE)
+
+
+
+```
+
+
+
