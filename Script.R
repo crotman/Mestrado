@@ -153,7 +153,7 @@ TIRs <- tibble()
 
 #TIRs <- TIRs %>% 
 #  #mutate(usina = as.integer(usina/100000), anuais = as.integer(anuais/100000)) %>% 
-#  mutate(usina = as.integer(usina/100000), anuais = as.integer(anuais/100000)) %>% 
+#  mutate(usina = as.intinstaeger(usina/100000), anuais = as.integer(anuais/100000)) %>% 
 #  arrange(usina,anuais)
 
 
@@ -195,7 +195,7 @@ insere_receita_custo_lucro <- function(num_cenario) {
     
     mutate ( lucro = receita - custo) %>% 
     
-    filter (lucro >0) %>% 
+    #filter (lucro >0) %>% 
     
     arrange( desc(lucro) ) 
   
@@ -1430,27 +1430,34 @@ particoes_iteracoes <- tibble(iteracao = integer(), perturbacao = integer(), sed
 
 #inv_prob_sede_existente_params <- c(5,7,10,15,20)
 
-inv_prob_sede_existente_params <- c(10,20,30)
+inv_prob_sede_existente_params <- c(50)
 
 
 
 particoes_com_troca_pre <- tibble()
 
 
-max_avaliacoes_fitness <- 10000
+max_avaliacoes_fitness <- 20000
 
-for (taxa in c(0.14,0.15) )
+
+
+for ( rodada in 20:200 )
 {
 
-  for (rodada in 1:1)
+  for (taxa in c(0.08,0.09))
   {
     
-    avaliacoes_fitness <- 0
   
     for (inv_prob_sede_existente in inv_prob_sede_existente_params)
     {
-    
-      for (i in 1:1 ) #nrow(parametros) )
+
+
+      cat("\014")  
+      
+      
+      avaliacoes_fitness <- 0
+      
+      for (i in 3:3) #nrow(parametros) )
       {
         
         
@@ -1501,7 +1508,7 @@ for (taxa in c(0.14,0.15) )
           {
             continua = TRUE
           
-            maior_lucro_busca_local <- -1000000000
+            maior_lucro_busca_local <- -1000000000000
             ##busca local
             while (continua){
               
@@ -1562,7 +1569,9 @@ for (taxa in c(0.14,0.15) )
                   mutate(iteracao = iteracao) %>% 
                   mutate(perturbacao = perturbacao) %>% 
                   mutate(MoJo_ate_melhor = MoJo) %>% 
-                  mutate(inv_prob_sede_existente = inv_prob_sede_existente)
+                  mutate(inv_prob_sede_existente = inv_prob_sede_existente) %>% 
+                  mutate(tempo = Sys.time())
+                
                 
                 #particoes_limpa <- limpa_particoes(particoes)
                 
@@ -1584,7 +1593,8 @@ for (taxa in c(0.14,0.15) )
                   mutate(iteracao = iteracao) %>% 
                   mutate(perturbacao = perturbacao) %>% 
                   mutate(MoJo_ate_melhor = MoJo) %>% 
-                  mutate(inv_prob_sede_existente = inv_prob_sede_existente)
+                  mutate(inv_prob_sede_existente = inv_prob_sede_existente) %>% 
+                  mutate(tempo = Sys.time())
                 
                 #particoes_limpa <- limpa_particoes(particoes)
                 
@@ -1672,7 +1682,9 @@ for (taxa in c(0.14,0.15) )
                 mutate(iteracao = iteracao) %>% 
                 mutate(perturbacao = perturbacao) %>% 
                 mutate(MoJo_ate_melhor = MoJo) %>% 
-                mutate(inv_prob_sede_existente = inv_prob_sede_existente)
+                mutate(inv_prob_sede_existente = inv_prob_sede_existente) %>% 
+                mutate(tempo = Sys.time())
+              
       
               #particoes_limpa <- limpa_particoes(particoes)
               
@@ -1680,7 +1692,7 @@ for (taxa in c(0.14,0.15) )
               {
                 particoes_iteracoes <- particoes_iteracoes %>% 
                   mutate(taxa = taxa)
-                write.csv(particoes_iteracoes,paste("c:\\temp\\rapido-param-", as.character(inv_prob_sede_existente), "-taxa-", taxa, "-perturb-", as.character(perturbacao %/% 10),"-rodada-", as.character(rodada), ".csv", sep=""))
+                write.csv(particoes_iteracoes,paste("c:\\temp\\cenario2-", as.character(inv_prob_sede_existente), "-taxa-", taxa, "-perturb-", as.character(perturbacao %/% 10),"-rodada-", as.character(rodada), ".csv", sep=""))
                 particoes_iteracoes <- particoes
               }
               else
