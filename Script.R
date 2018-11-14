@@ -19,7 +19,7 @@ MoJo <- 0
 #Lendo municipios e informacoes de energia e carga
 
 #municipios <-  read.csv("C:\\Mestrado\\junta.csv",sep = ";", encoding = "UTF-8",dec = "," ) %>% as_tibble()
-municipios <-  read.csv("D:\\Mestrado Bruno\\HPC Parametrizado\\junta.csv",sep = ";", encoding = "UTF-8",dec = "," ) %>% as_tibble()
+municipios <-  read.csv("c:\\temp\\carga_energia.csv",sep = ",", encoding = "UTF-8",dec = "." ) %>% as_tibble()
 
 str(municipios)
 
@@ -78,7 +78,7 @@ anos_vida_util_usina = 30
 
 #parametros <-  read.csv("C:\\Mestrado\\parametros.csv",sep = ";", encoding = "UTF-8",dec = "," ) %>% as_tibble()
 
-parametros <-  read.csv("C:\\temp\\parametros.csv",sep = ";", encoding = "UTF-8",dec = "," ) %>% as_tibble()
+parametros <-  read.csv("c:\\temp\\parametros_novo.csv",sep = ",", encoding = "UTF-8",dec = "." ) %>% as_tibble()
 
 
 str(parametros)
@@ -90,7 +90,7 @@ head(parametros)
 #Escolhendo escopo de local da execucao
 
 municipios_escopo_original <- municipios %>% 
-  filter( X.U.FEFF.UF == "SP" )
+  filter( UF == "SP" )
 
 
 
@@ -1437,14 +1437,14 @@ inv_prob_sede_existente_params <- c(50)
 particoes_com_troca_pre <- tibble()
 
 
-max_avaliacoes_fitness <- 20000
+max_avaliacoes_fitness <- 10000
 
 
 
-for ( rodada in 20:200 )
+for ( rodada in 1:10 )
 {
 
-  for (taxa in c(0.08,0.09))
+  for (taxa_nada in c(0))
   {
     
   
@@ -1455,18 +1455,22 @@ for ( rodada in 20:200 )
       cat("\014")  
       
       
-      avaliacoes_fitness <- 0
       
-      for (i in 3:3) #nrow(parametros) )
+      for (i in 49:64) #nrow(parametros) )
       {
         
         
         for (h in (1:1))
         {
           
+          avaliacoes_fitness <- 0
+          taxa <- parametros[i,]$taxa/100
+          cod_cenario <- parametros[i,]$cod_cenario
+          
           #Inserindo os custos, receitas e lucros para cada par de cidades
           matriz <- insere_receita_custo_lucro(i)
-    
+          
+          
           
           matriz_so_lucro_energia <- matriz %>% 
             select(CD_x, CD_y, lucro, Energia_y)
@@ -1552,6 +1556,8 @@ for ( rodada in 20:200 )
                 print(iteracao)
                 print("avaliação")
                 print(avaliacoes_fitness)
+                print("cenario")
+                print(cod_cenario)
                 print("rodada")
                 print(rodada)
                 maior_lucro_busca_local = lucro_atual
@@ -1676,12 +1682,12 @@ for ( rodada in 20:200 )
               perturbacao <- perturbacao + 1
               iteracao <- 1
               
-              MoJo <- calculaMoJo(particoes, melhor_solucao)
+              #MoJo <- calculaMoJo(particoes, melhor_solucao)
         
               particoes <- particoes %>% 
                 mutate(iteracao = iteracao) %>% 
                 mutate(perturbacao = perturbacao) %>% 
-                mutate(MoJo_ate_melhor = MoJo) %>% 
+                #mutate(MoJo_ate_melhor = MoJo) %>% 
                 mutate(inv_prob_sede_existente = inv_prob_sede_existente) %>% 
                 mutate(tempo = Sys.time())
               
@@ -1690,13 +1696,18 @@ for ( rodada in 20:200 )
               
               if (perturbacao %% 10 == 0)
               {
-                particoes_iteracoes <- particoes_iteracoes %>% 
-                  mutate(taxa = taxa)
-                write.csv(particoes_iteracoes,paste("c:\\temp\\cenario2-", as.character(inv_prob_sede_existente), "-taxa-", taxa, "-perturb-", as.character(perturbacao %/% 10),"-rodada-", as.character(rodada), ".csv", sep=""))
-                particoes_iteracoes <- particoes
+                write.csv(particoes_iteracoes,paste("c:\\temp\\VALENDO_v5-", as.character(inv_prob_sede_existente), "-taxa-", taxa, "-perturb-", as.character(perturbacao),"-rodada-", as.character(rodada), "-codcenario-", cod_cenario, ".csv", sep=""))
+                particoes_iteracoes <- particoes %>% 
+                  mutate(taxa = taxa) %>% 
+                  mutate(cod_cenario = cod_cenario) %>% 
+                  mutate(rodada = rodada)
               }
               else
               {
+                particoes <- particoes %>% 
+                  mutate(taxa = taxa) %>% 
+                  mutate(cod_cenario = cod_cenario) %>% 
+                  mutate(rodada = rodada)
                 particoes_iteracoes <- particoes_iteracoes %>% bind_rows(particoes)
               }
             }
@@ -1712,7 +1723,7 @@ for ( rodada in 20:200 )
   }      
 }
 
-    
-    
+write.csv(particoes_iteracoes,paste("c:\\temp\\VALENDO_v5-", as.character(inv_prob_sede_existente), "-taxa-", taxa, "-perturb-", as.character(perturbacao),"-rodada-", as.character(rodada), "-codcenario-", cod_cenario, ".csv", sep=""))
+
       
     
