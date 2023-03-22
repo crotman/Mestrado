@@ -1,0 +1,4 @@
+﻿Cenário;receita_por_mwh;premio_produtor;alfa_custo_usina;beta_custo_usina;custo_colheita_por_t;custo_carga_por_t;custo_armazenamento_por_t;custo_transporte_por_t_km;percentual_OPEX;fator_disponibilidade
+Otimista;150;0,075;69000000;3500000;19,95;3,69;5,69;0,05;0,03;0,9
+Neutro;150;0,075;69000000;3500000;37,08;7,84;13,81;0,18;0,03;0,9
+Pessimista;150;0,075;69000000;3500000;57,84;13,88;22,73;0,4;0,03;0,9
